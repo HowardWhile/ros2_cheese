@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <iomanip>
 #include <limits>
@@ -34,6 +35,7 @@ namespace
 constexpr auto kTopicProbePeriod = std::chrono::milliseconds(1000);
 constexpr auto kStatusPublishPeriod = std::chrono::milliseconds(1000);
 constexpr auto kStatusLogPeriod = std::chrono::seconds(10);
+constexpr auto kStatsWindowPeriod = std::chrono::seconds(5);
 constexpr auto kStreamTimeout = std::chrono::milliseconds(2000);
 constexpr int64_t kBytesPerMegabyte = 1024LL * 1024LL;
 constexpr char kRawImageType[] = "sensor_msgs/msg/Image";
@@ -106,14 +108,18 @@ private:
         uintmax_t size = 0;
     };
 
-    struct StreamStats
+    struct StreamSample
     {
-        double fps_min = std::numeric_limits<double>::infinity();
-        double fps_max = 0.0;
-        double fps_sum = 0.0;
-        double bandwidth_mbps_min = std::numeric_limits<double>::infinity();
-        double bandwidth_mbps_max = 0.0;
-        double bandwidth_mbps_sum = 0.0;
+        rclcpp::Time time;
+        double fps = 0.0;
+        double bandwidth_mbps = 0.0;
+    };
+
+    struct MetricStats
+    {
+        double min = 0.0;
+        double avg = 0.0;
+        double max = 0.0;
         uint64_t sample_count = 0;
     };
 
@@ -250,11 +256,25 @@ private:
 
     void recordImageSample(const size_t byte_count)
     {
+        const auto sample_time = now();
         std::lock_guard<std::mutex> lock(stream_mutex_);
         ++window_frame_count_;
         window_byte_count_ += byte_count;
-        last_image_time_ = now();
+
+        if (has_received_image_)
+        {
+            const auto elapsed = (sample_time - last_image_time_).seconds();
+            if (elapsed > 1e-9)
+            {
+                stream_samples_.push_back(StreamSample{sample_time,
+                                                       1.0 / elapsed,
+                                                       (static_cast<double>(byte_count) * 8.0) / elapsed / 1000000.0});
+            }
+        }
+
+        last_image_time_ = sample_time;
         has_received_image_ = true;
+        pruneStreamSamples(sample_time);
     }
 
     void recordImageFailure()
@@ -296,6 +316,8 @@ private:
         uint64_t total_failure_count = 0;
         bool has_received_image = false;
         rclcpp::Time last_image_time;
+        MetricStats fps_stats;
+        MetricStats bandwidth_stats;
 
         {
             std::lock_guard<std::mutex> lock(stream_mutex_);
@@ -305,6 +327,9 @@ private:
             total_failure_count = total_failure_count_;
             has_received_image = has_received_image_;
             last_image_time = last_image_time_;
+            pruneStreamSamples(current_time);
+            fps_stats = calculateFpsStats();
+            bandwidth_stats = calculateBandwidthStats();
             window_frame_count_ = 0;
             window_byte_count_ = 0;
             window_failure_count_ = 0;
@@ -312,7 +337,6 @@ private:
 
         const double fps = static_cast<double>(frame_count) / elapsed;
         const double bandwidth_mbps = (static_cast<double>(byte_count) * 8.0) / elapsed / 1000000.0;
-        updateStreamStats(fps, bandwidth_mbps);
 
         const bool subscribed = isSubscribed();
         const double seconds_since_last_image = has_received_image ? (current_time - last_image_time).seconds() : -1.0;
@@ -341,11 +365,9 @@ private:
         status["capture_dir"]["max_files"] = max_files_;
         status["capture_dir"]["max_mb"] = max_mb_;
         status["capture_dir"]["max_bytes"] = max_bytes_;
-        status["fps"] = buildStatsJson(fps, stream_stats_.fps_min, stream_stats_.fps_sum, stream_stats_.fps_max,
-                                        stream_stats_.sample_count);
-        status["bandwidth_mbps"] =
-            buildStatsJson(bandwidth_mbps, stream_stats_.bandwidth_mbps_min, stream_stats_.bandwidth_mbps_sum,
-                           stream_stats_.bandwidth_mbps_max, stream_stats_.sample_count);
+        status["stats_window_sec"] = std::chrono::duration<double>(kStatsWindowPeriod).count();
+        status["fps"] = buildStatsJson(fps, fps_stats);
+        status["bandwidth_mbps"] = buildStatsJson(bandwidth_mbps, bandwidth_stats);
 
         const auto status_text = status.dump();
 
@@ -357,13 +379,6 @@ private:
             std::chrono::duration<double>(kStatusLogPeriod).count())
         {
             last_status_log_time_ = current_time;
-            const auto fps_avg = stream_stats_.sample_count == 0
-                                     ? 0.0
-                                     : stream_stats_.fps_sum / static_cast<double>(stream_stats_.sample_count);
-            const auto bandwidth_avg = stream_stats_.sample_count == 0
-                                           ? 0.0
-                                           : stream_stats_.bandwidth_mbps_sum /
-                                                 static_cast<double>(stream_stats_.sample_count);
             RCLCPP_INFO(get_logger(),
                         "\n"
                         "--- [CHEESE STATUS REPORT] ---\n"
@@ -375,9 +390,9 @@ private:
                         "------------------------------",
                         image_topic_.c_str(), subscribed ? "True" : "False", subscribedKindName().c_str(),
                         stream_ok ? "True" : "False", stream_ok ? "False" : "True", seconds_since_last_image,
-                        static_cast<unsigned long>(total_failure_count), fps, stream_stats_.fps_min, fps_avg,
-                        stream_stats_.fps_max, bandwidth_mbps, stream_stats_.bandwidth_mbps_min, bandwidth_avg,
-                        stream_stats_.bandwidth_mbps_max, capture_dir_.string().c_str(),
+                        static_cast<unsigned long>(total_failure_count), fps, fps_stats.min, fps_stats.avg,
+                        fps_stats.max, bandwidth_mbps, bandwidth_stats.min, bandwidth_stats.avg,
+                        bandwidth_stats.max, capture_dir_.string().c_str(),
                         capture_dir_stats.exists ? "True" : "False",
                         static_cast<unsigned long>(capture_dir_stats.file_count), max_files_,
                         static_cast<double>(capture_dir_stats.total_bytes) / kBytesPerMegabyte,
@@ -385,25 +400,56 @@ private:
         }
     }
 
-    void updateStreamStats(const double fps, const double bandwidth_mbps)
+    void pruneStreamSamples(const rclcpp::Time &current_time)
     {
-        ++stream_stats_.sample_count;
-        stream_stats_.fps_min = std::min(stream_stats_.fps_min, fps);
-        stream_stats_.fps_max = std::max(stream_stats_.fps_max, fps);
-        stream_stats_.fps_sum += fps;
-        stream_stats_.bandwidth_mbps_min = std::min(stream_stats_.bandwidth_mbps_min, bandwidth_mbps);
-        stream_stats_.bandwidth_mbps_max = std::max(stream_stats_.bandwidth_mbps_max, bandwidth_mbps);
-        stream_stats_.bandwidth_mbps_sum += bandwidth_mbps;
+        const auto window_seconds = std::chrono::duration<double>(kStatsWindowPeriod).count();
+        while (!stream_samples_.empty() && (current_time - stream_samples_.front().time).seconds() > window_seconds)
+        {
+            stream_samples_.pop_front();
+        }
     }
 
-    Json buildStatsJson(const double current, const double min_value, const double sum, const double max_value,
-                        const uint64_t sample_count) const
+    MetricStats calculateFpsStats() const
+    {
+        return calculateMetricStats([](const StreamSample &sample) { return sample.fps; });
+    }
+
+    MetricStats calculateBandwidthStats() const
+    {
+        return calculateMetricStats([](const StreamSample &sample) { return sample.bandwidth_mbps; });
+    }
+
+    template <typename ValueFn>
+    MetricStats calculateMetricStats(ValueFn value_fn) const
+    {
+        MetricStats stats;
+        if (stream_samples_.empty())
+        {
+            return stats;
+        }
+
+        stats.sample_count = stream_samples_.size();
+        stats.min = std::numeric_limits<double>::infinity();
+        double sum = 0.0;
+        for (const auto &sample : stream_samples_)
+        {
+            const auto value = value_fn(sample);
+            stats.min = std::min(stats.min, value);
+            stats.max = std::max(stats.max, value);
+            sum += value;
+        }
+        stats.avg = sum / static_cast<double>(stats.sample_count);
+        return stats;
+    }
+
+    Json buildStatsJson(const double current, const MetricStats &metric_stats) const
     {
         Json stats;
         stats["current"] = current;
-        stats["min"] = sample_count == 0 ? 0.0 : min_value;
-        stats["avg"] = sample_count == 0 ? 0.0 : sum / static_cast<double>(sample_count);
-        stats["max"] = max_value;
+        stats["min"] = metric_stats.min;
+        stats["avg"] = metric_stats.avg;
+        stats["max"] = metric_stats.max;
+        stats["samples"] = metric_stats.sample_count;
         return stats;
     }
 
@@ -582,7 +628,7 @@ private:
     uint64_t window_failure_count_ = 0;
     uint64_t total_failure_count_ = 0;
     bool has_received_image_ = false;
-    StreamStats stream_stats_;
+    std::deque<StreamSample> stream_samples_;
 };
 
 int main(int argc, char **argv)
