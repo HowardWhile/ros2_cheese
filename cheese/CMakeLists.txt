@@ -6,6 +6,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(cheese_interfaces REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -21,6 +22,7 @@ target_include_directories(cheese PUBLIC
 target_compile_features(cheese PUBLIC cxx_std_17)
 ament_target_dependencies(
   cheese
+  cheese_interfaces
   cv_bridge
   rclcpp
   sensor_msgs

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -27,6 +28,7 @@
 #include "sensor_msgs/msg/image.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_srvs/srv/trigger.hpp"
+#include "cheese_interfaces/srv/string_trigger.hpp"
 
 #include "cheese/json.hpp"
 
@@ -76,6 +78,9 @@ public:
 
         trigger_srv_ = create_service<std_srvs::srv::Trigger>(
             "~/trigger", std::bind(&CheeseNode::handleTrigger, this, std::placeholders::_1, std::placeholders::_2));
+        string_trigger_srv_ = create_service<cheese_interfaces::srv::StringTrigger>(
+            "~/string_trigger",
+            std::bind(&CheeseNode::handleStringTrigger, this, std::placeholders::_1, std::placeholders::_2));
         status_pub_ = create_publisher<std_msgs::msg::String>("~/status", 10);
 
         topic_probe_timer_ = create_wall_timer(kTopicProbePeriod, std::bind(&CheeseNode::probeImageTopic, this));
@@ -86,6 +91,7 @@ public:
         pruneCaptures();
 
         RCLCPP_INFO(get_logger(), "Cheese service: ~/trigger");
+        RCLCPP_INFO(get_logger(), "Cheese string trigger service: ~/string_trigger");
         RCLCPP_INFO(get_logger(), "Cheese status topic: ~/status");
         RCLCPP_INFO(get_logger(), "Cheese image topic: %s", sanitize_topic_for_log(image_topic_).c_str());
         RCLCPP_INFO(get_logger(), "Cheese capture dir: %s", capture_dir_.string().c_str());
@@ -489,7 +495,18 @@ private:
                        std::shared_ptr<std_srvs::srv::Trigger::Response> response)
     {
         (void)request;
+        captureImage("", response);
+    }
 
+    void handleStringTrigger(const std::shared_ptr<cheese_interfaces::srv::StringTrigger::Request> request,
+                             std::shared_ptr<cheese_interfaces::srv::StringTrigger::Response> response)
+    {
+        captureImage(sanitizeFilenameTag(request->message), response);
+    }
+
+    template <typename ResponseT>
+    void captureImage(const std::string &filename_tag, ResponseT response)
+    {
         cv::Mat image;
         {
             std::lock_guard<std::mutex> lock(image_mutex_);
@@ -509,7 +526,7 @@ private:
         try
         {
             std::filesystem::create_directories(capture_dir_);
-            const auto path = capture_dir_ / nextImageFilename();
+            const auto path = capture_dir_ / nextImageFilename(filename_tag);
             if (!cv::imwrite(path.string(), image))
             {
                 response->success = false;
@@ -530,7 +547,7 @@ private:
         }
     }
 
-    std::string nextImageFilename() const
+    std::string nextImageFilename(const std::string &tag) const
     {
         const auto now = std::chrono::system_clock::now();
         const auto now_time_t = std::chrono::system_clock::to_time_t(now);
@@ -541,9 +558,49 @@ private:
         localtime_r(&now_time_t, &tm_snapshot);
 
         std::ostringstream stream;
-        stream << "cheese-" << std::put_time(&tm_snapshot, "%Y%m%d-%H%M%S") << "-" << std::setfill('0') << std::setw(3)
-               << subseconds << ".jpg";
+        stream << std::put_time(&tm_snapshot, "%Y%m%d-%H%M%S") << "-" << std::setfill('0') << std::setw(3)
+               << subseconds;
+        if (!tag.empty())
+        {
+            stream << "-" << tag;
+        }
+        stream << ".jpg";
         return stream.str();
+    }
+
+    std::string sanitizeFilenameTag(const std::string &tag) const
+    {
+        std::string sanitized;
+        sanitized.reserve(tag.size());
+        bool previous_was_separator = false;
+
+        for (const auto ch : tag)
+        {
+            const auto is_safe = std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-';
+            if (is_safe)
+            {
+                sanitized.push_back(ch);
+                previous_was_separator = false;
+                continue;
+            }
+
+            if (!previous_was_separator)
+            {
+                sanitized.push_back('_');
+                previous_was_separator = true;
+            }
+        }
+
+        while (!sanitized.empty() && sanitized.front() == '_')
+        {
+            sanitized.erase(sanitized.begin());
+        }
+        while (!sanitized.empty() && sanitized.back() == '_')
+        {
+            sanitized.pop_back();
+        }
+
+        return sanitized;
     }
 
     void pruneCaptures()
@@ -617,6 +674,7 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr compressed_sub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr trigger_srv_;
+    rclcpp::Service<cheese_interfaces::srv::StringTrigger>::SharedPtr string_trigger_srv_;
     rclcpp::TimerBase::SharedPtr topic_probe_timer_;
     rclcpp::TimerBase::SharedPtr status_timer_;
     rclcpp::Time last_status_time_;

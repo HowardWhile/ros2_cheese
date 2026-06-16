@@ -87,6 +87,12 @@ ros2 launch cheese cheese.launch.py max_files:=1000 max_mb:=1024
 ros2 service call /cheese/trigger std_srvs/srv/Trigger "{}"
 ```
 
+使用字串後綴觸發拍照：
+
+```shell
+ros2 service call /cheese/string_trigger cheese_interfaces/srv/StringTrigger "{message: test}"
+```
+
 
 
 ## Service
@@ -94,7 +100,7 @@ ros2 service call /cheese/trigger std_srvs/srv/Trigger "{}"
 | Service 名稱      | Type                   | 功能說明       |
 | ----------------- | ---------------------- | -------------- |
 | `/cheese/trigger` | `std_srvs/srv/Trigger` | 觸發拍照並存圖 |
-|                   |                        |                |
+| `/cheese/string_trigger` | `cheese_interfaces/srv/StringTrigger` | 觸發拍照並使用 `message` 作為檔名後綴 |
 
 
 
@@ -187,13 +193,13 @@ Status JSON 欄位說明：
 
 ## 輸出
 
-拍照成功時會輸出 `.jpg` 圖片：
+拍照成功時會輸出 `.jpg` 圖片，`message` 空白時會省略後綴：
 
 ```shell
-/tmp/ros2_cheese/cheese-YYYYMMDD-HHMMSS-mmm.jpg
+/tmp/ros2_cheese/YYYYMMDD-HHMMSS-mmm-<message>.jpg
 ```
 
-Service response 的 `message` 會回傳圖片完整路徑。
+Service request 的 `message` 會作為檔名後綴，會自動將不適合檔名的字元轉成 `_`。Service response 的 `message` 會回傳圖片完整路徑。
 
 
 
