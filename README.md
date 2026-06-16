@@ -59,6 +59,18 @@ ros2 launch cheese cheese.launch.py image_topic:=/camera/color/image_raw
 ros2 launch cheese cheese.launch.py capture_dir:=/tmp/ros2_cheese
 ```
 
+可指定 node 名稱：
+
+```shell
+ros2 launch cheese cheese.launch.py node_name:=head_camera_cheese
+```
+
+可指定 namespace：
+
+```shell
+ros2 launch cheese cheese.launch.py namespace:=head_camera node_name:=cheese
+```
+
 可指定保留上限：
 
 ```shell

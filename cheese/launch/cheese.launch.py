@@ -23,6 +23,20 @@ def generate_launch_description():
         description="Image topic to capture from",
     )
 
+    # Node 名稱
+    arg_node_name = DeclareLaunchArgument(
+        "node_name",
+        default_value="cheese",
+        description="Node name for the cheese image capture node",
+    )
+
+    # Node namespace，空字串表示使用 root namespace
+    arg_namespace = DeclareLaunchArgument(
+        "namespace",
+        default_value="",
+        description="Node namespace for the cheese image capture node",
+    )
+
     # 儲存拍照結果的資料夾
     arg_capture_dir = DeclareLaunchArgument(
         "capture_dir",
@@ -46,6 +60,8 @@ def generate_launch_description():
 
     # 取得參數配置
     image_topic = LaunchConfiguration("image_topic")
+    node_name = LaunchConfiguration("node_name")
+    namespace = LaunchConfiguration("namespace")
     capture_dir = LaunchConfiguration("capture_dir")
     max_files = ParameterValue(
         LaunchConfiguration("max_files"), value_type=int
@@ -60,7 +76,8 @@ def generate_launch_description():
     cheese_node = Node(
         package="cheese",
         executable="cheese",
-        name="cheese",
+        name=node_name,
+        namespace=namespace,
         output="screen",
         parameters=[
             {"image_topic": image_topic},
@@ -77,6 +94,8 @@ def generate_launch_description():
 
     # 加入所有參數宣告
     ld.add_action(arg_image_topic)
+    ld.add_action(arg_node_name)
+    ld.add_action(arg_namespace)
     ld.add_action(arg_capture_dir)
     ld.add_action(arg_max_files)
     ld.add_action(arg_max_mb)

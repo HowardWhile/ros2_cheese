@@ -75,8 +75,8 @@ public:
         std::filesystem::create_directories(capture_dir_);
 
         trigger_srv_ = create_service<std_srvs::srv::Trigger>(
-            "trigger", std::bind(&CheeseNode::handleTrigger, this, std::placeholders::_1, std::placeholders::_2));
-        status_pub_ = create_publisher<std_msgs::msg::String>("status", 10);
+            "~/trigger", std::bind(&CheeseNode::handleTrigger, this, std::placeholders::_1, std::placeholders::_2));
+        status_pub_ = create_publisher<std_msgs::msg::String>("~/status", 10);
 
         topic_probe_timer_ = create_wall_timer(kTopicProbePeriod, std::bind(&CheeseNode::probeImageTopic, this));
         status_timer_ = create_wall_timer(kStatusPublishPeriod, std::bind(&CheeseNode::publishStatus, this));
