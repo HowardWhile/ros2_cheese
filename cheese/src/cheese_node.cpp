@@ -357,7 +357,31 @@ private:
             std::chrono::duration<double>(kStatusLogPeriod).count())
         {
             last_status_log_time_ = current_time;
-            RCLCPP_INFO(get_logger(), "Cheese status: %s", status_text.c_str());
+            const auto fps_avg = stream_stats_.sample_count == 0
+                                     ? 0.0
+                                     : stream_stats_.fps_sum / static_cast<double>(stream_stats_.sample_count);
+            const auto bandwidth_avg = stream_stats_.sample_count == 0
+                                           ? 0.0
+                                           : stream_stats_.bandwidth_mbps_sum /
+                                                 static_cast<double>(stream_stats_.sample_count);
+            RCLCPP_INFO(get_logger(),
+                        "\n"
+                        "--- [CHEESE STATUS REPORT] ---\n"
+                        "Topic: %s | Subscribed: %s | Type: %s\n"
+                        "Stream OK: %s | Abnormal: %s | Last Image: %.3f sec | Failures: %lu\n"
+                        "FPS Current/Min/Avg/Max: %.1f / %.1f / %.1f / %.1f\n"
+                        "BW Mbps Current/Min/Avg/Max: %.1f / %.1f / %.1f / %.1f\n"
+                        "Capture Dir: %s | Exists: %s | Files: %lu / %d | Size: %.2f MB / %ld MB\n"
+                        "------------------------------",
+                        image_topic_.c_str(), subscribed ? "True" : "False", subscribedKindName().c_str(),
+                        stream_ok ? "True" : "False", stream_ok ? "False" : "True", seconds_since_last_image,
+                        static_cast<unsigned long>(total_failure_count), fps, stream_stats_.fps_min, fps_avg,
+                        stream_stats_.fps_max, bandwidth_mbps, stream_stats_.bandwidth_mbps_min, bandwidth_avg,
+                        stream_stats_.bandwidth_mbps_max, capture_dir_.string().c_str(),
+                        capture_dir_stats.exists ? "True" : "False",
+                        static_cast<unsigned long>(capture_dir_stats.file_count), max_files_,
+                        static_cast<double>(capture_dir_stats.total_bytes) / kBytesPerMegabyte,
+                        static_cast<long>(max_mb_));
         }
     }
 
