@@ -14,51 +14,51 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
 
     # ---------------------------------------------------------------
-    # 1. Launch Arguments (外部參數輸入)
+    # 1. Launch arguments
     # ---------------------------------------------------------------
-    # 影像來源 topic，可支援 raw image 或 compressed image
+    # Image source topic; both raw and compressed images are supported.
     arg_image_topic = DeclareLaunchArgument(
         "image_topic",
         default_value="/camera/color/image_raw",
         description="Image topic to capture from",
     )
 
-    # Node 名稱
+    # Node name
     arg_node_name = DeclareLaunchArgument(
         "node_name",
         default_value="cheese",
         description="Node name for the cheese image capture node",
     )
 
-    # Node namespace，空字串表示使用 root namespace
+    # Node namespace; an empty string uses the root namespace.
     arg_namespace = DeclareLaunchArgument(
         "namespace",
         default_value="",
         description="Node namespace for the cheese image capture node",
     )
 
-    # 儲存拍照結果的資料夾
+    # Directory where captured images are stored.
     arg_capture_dir = DeclareLaunchArgument(
         "capture_dir",
         default_value="/tmp/ros2_cheese",
         description="Directory used to save captured images",
     )
 
-    # 最多保留的影像數量，0 表示不限制
+    # Maximum number of images to retain; 0 means unlimited.
     arg_max_files = DeclareLaunchArgument(
         "max_files",
         default_value="1000",
         description="Maximum number of captured images to keep; 0 means unlimited",
     )
 
-    # 最多保留的影像容量，單位 MB，0 表示不限制
+    # Maximum image storage size in MB; 0 means unlimited.
     arg_max_mb = DeclareLaunchArgument(
         "max_mb",
         default_value="1024",
         description="Maximum storage size for captured images in MB; 0 means unlimited",
     )
 
-    # 取得參數配置
+    # Resolve launch configurations.
     image_topic = LaunchConfiguration("image_topic")
     node_name = LaunchConfiguration("node_name")
     namespace = LaunchConfiguration("namespace")
@@ -92,7 +92,7 @@ def generate_launch_description():
     # ---------------------------------------------------------------
     ld = LaunchDescription()
 
-    # 加入所有參數宣告
+    # Add all launch argument declarations.
     ld.add_action(arg_image_topic)
     ld.add_action(arg_node_name)
     ld.add_action(arg_namespace)
@@ -100,7 +100,7 @@ def generate_launch_description():
     ld.add_action(arg_max_files)
     ld.add_action(arg_max_mb)
 
-    # 啟動 cheese 節點
+    # Start the Cheese node.
     ld.add_action(cheese_node)
 
     return ld

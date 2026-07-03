@@ -1,123 +1,113 @@
 # ros2_cheese
 
-ROS 2 拍照工具 package。
+**English** | [繁體中文](README_zh.md)
 
+A trigger-based image capture package for ROS 2.
 
+## Packages
 
-## Package 列表
+| Package | Description |
+| --- | --- |
+| `cheese` | Trigger-based image capture and storage |
+| `cheese_interfaces` | Custom service interfaces for Cheese |
 
-| Package 名稱          | 功能說明                       |
-| --------------------- | ------------------------------ |
-| `cheese`              | 觸發式影像擷取與儲存           |
-| `cheese_interfaces`   | Cheese 自訂 service interface  |
-|                       |                                |
+## Nodes
 
+| Node | Description |
+| --- | --- |
+| `cheese` | Subscribes to an image topic and saves an image when triggered |
 
+## Launch files
 
-## Node 列表
+| Launch file | Description |
+| --- | --- |
+| `cheese.launch.py` | Starts the Cheese image capture service |
 
-| Node 名稱 | 功能說明                                |
-| --------- | --------------------------------------- |
-| `cheese`  | 訂閱 image topic，收到 trigger 後存圖   |
-|           |                                         |
-|           |                                         |
+## Usage
 
-
-
-## Launch 列表
-
-| Launch 名稱        | 功能說明                 |
-| ------------------ | ------------------------ |
-| `cheese.launch.py` | 啟動 Cheese 拍照服務     |
-|                    |                          |
-
-
-
-## 使用方法
-
-啟動 Cheese 拍照服務：
+Start the Cheese node:
 
 ```shell
-ros2 launch cheese cheese.launch.py
+ros2 run cheese cheese
 ```
 
-預設圖片輸出路徑：
-
-```shell
-/tmp/ros2_cheese
-```
-
-可指定 image topic：
-
-```shell
-ros2 launch cheese cheese.launch.py image_topic:=/camera/color/image_raw
-```
-
-可指定輸出路徑：
-
-```shell
-ros2 launch cheese cheese.launch.py capture_dir:=/tmp/ros2_cheese
-```
-
-可指定 node 名稱：
-
-```shell
-ros2 launch cheese cheese.launch.py node_name:=head_camera_cheese
-```
-
-可指定 namespace：
-
-```shell
-ros2 launch cheese cheese.launch.py namespace:=head_camera node_name:=cheese
-```
-
-可指定保留上限：
-
-```shell
-ros2 launch cheese cheese.launch.py max_files:=1000 max_mb:=1024
-```
-
-
-
-## 測試方法
-
-直接呼叫 ROS 2 service 拍照：
+In another terminal, call the standard ROS 2 service to capture an image:
 
 ```shell
 ros2 service call /cheese/trigger std_srvs/srv/Trigger "{}"
 ```
 
-使用字串後綴觸發拍照：
+You can also provide a string to use as the filename suffix:
 
 ```shell
 ros2 service call /cheese/string_trigger cheese_interfaces/srv/StringTrigger "{message: test}"
 ```
 
+### Advanced usage
 
+Start the Cheese node with its launch file:
 
-## Service
+```shell
+ros2 launch cheese cheese.launch.py
+```
 
-| Service 名稱      | Type                   | 功能說明       |
-| ----------------- | ---------------------- | -------------- |
-| `/cheese/trigger` | `std_srvs/srv/Trigger` | 觸發拍照並存圖 |
-| `/cheese/string_trigger` | `cheese_interfaces/srv/StringTrigger` | 觸發拍照並使用 `message` 作為檔名後綴 |
+The default output directory is:
 
+```shell
+/tmp/ros2_cheese
+```
 
+Specify an image topic:
 
-## Topic
+```shell
+ros2 launch cheese cheese.launch.py image_topic:=/camera/color/image_raw
+```
 
-| Topic 名稱       | Type                  | 功能說明             |
-| ---------------- | --------------------- | -------------------- |
-| `/cheese/status` | `std_msgs/msg/String` | 每秒發布影像串流狀態 |
-|                  |                       |                      |
+Specify an output directory:
 
-`/cheese/status` 內容為 JSON 字串，包含訂閱狀態、串流是否異常、fps、bandwidth，以及目前輸出資料夾的檔案數量與容量統計。
+```shell
+ros2 launch cheese cheese.launch.py capture_dir:=/tmp/ros2_cheese
+```
 
-Status JSON 範例：
+Specify a node name:
+
+```shell
+ros2 launch cheese cheese.launch.py node_name:=camera_cheese
+```
+
+Specify a namespace:
+
+```shell
+ros2 launch cheese cheese.launch.py namespace:=camera node_name:=cheese
+```
+
+Set file count and storage limits:
+
+```shell
+ros2 launch cheese cheese.launch.py max_files:=1000 max_mb:=1024
+```
+
+## Services
+
+| Service | Type | Description |
+| --- | --- | --- |
+| `/cheese/trigger` | `std_srvs/srv/Trigger` | Captures and saves an image |
+| `/cheese/string_trigger` | `cheese_interfaces/srv/StringTrigger` | Captures an image and uses `message` as the filename suffix |
+
+## Topics
+
+| Topic | Type | Description |
+| --- | --- | --- |
+| `/cheese/status` | `std_msgs/msg/String` | Publishes image stream status once per second |
+
+The `/cheese/status` payload is a JSON string containing the subscription
+state, stream health, frame rate, bandwidth, and output directory statistics.
+
+Example status payload:
 
 ```json
 {
-  "image_topic": "/head_camera/color/image_raw/compressed",
+  "image_topic": "/camera/color/image_raw/compressed",
   "subscribed": true,
   "subscription_type": "compressed",
   "stream_ok": true,
@@ -158,58 +148,57 @@ Status JSON 範例：
 }
 ```
 
-Status JSON 欄位說明：
+### Status fields
 
-| 欄位 | 功能說明 |
-| ---- | -------- |
-| `image_topic` | 目前指定的影像 topic |
-| `subscribed` | 是否已成功訂閱 image topic |
-| `subscription_type` | 訂閱型態：`raw`、`compressed` 或 `unknown` |
-| `stream_ok` | 影像串流是否正常 |
-| `stream_abnormal` | 影像串流是否異常 |
-| `seconds_since_last_image` | 距離上一張成功影像的秒數，尚未收到影像時為 `-1` |
-| `window` | 最近一次 status 發布週期內的統計，約 1 秒 |
-| `window.frames` | 最近一次 status 發布週期內收到的影像張數 |
-| `window.bytes` | 最近一次 status 發布週期內收到的影像資料量 |
-| `window.failures` | 最近一次 status 發布週期內的影像處理失敗次數 |
-| `total_failures` | node 啟動後累計影像處理失敗次數 |
-| `stats_window_sec` | `fps` 與 `bandwidth_mbps` 的 min/avg/max 滑動視窗秒數 |
-| `fps.current` | 最近一次 status 發布週期的平均 FPS |
-| `fps.min` / `fps.avg` / `fps.max` | 最近 `stats_window_sec` 秒內，每次 image callback 統計出的 FPS 最小/平均/最大值 |
-| `fps.samples` | 最近 `stats_window_sec` 秒內的 FPS 統計 sample 數量 |
-| `bandwidth_mbps.current` | 最近一次 status 發布週期的平均 bandwidth，單位 Mbps |
-| `bandwidth_mbps.min` / `bandwidth_mbps.avg` / `bandwidth_mbps.max` | 最近 `stats_window_sec` 秒內，每次 image callback 統計出的 bandwidth 最小/平均/最大值，單位 Mbps |
-| `bandwidth_mbps.samples` | 最近 `stats_window_sec` 秒內的 bandwidth 統計 sample 數量 |
-| `capture_dir.path` | 圖片輸出資料夾 |
-| `capture_dir.exists` | 圖片輸出資料夾是否存在 |
-| `capture_dir.files` | 圖片輸出資料夾中的檔案數量 |
-| `capture_dir.bytes` | 圖片輸出資料夾目前容量，單位 bytes |
-| `capture_dir.mb` | 圖片輸出資料夾目前容量，單位 MB |
-| `capture_dir.max_files` | `max_files` 設定值，`0` 表示不限制 |
-| `capture_dir.max_mb` | `max_mb` 設定值，`0` 表示不限制 |
-| `capture_dir.max_bytes` | `max_mb` 換算後的 bytes 上限 |
+| Field | Description |
+| --- | --- |
+| `image_topic` | Configured image topic |
+| `subscribed` | Whether the node has subscribed successfully |
+| `subscription_type` | Subscription type: `raw`, `compressed`, or `unknown` |
+| `stream_ok` | Whether the image stream is healthy |
+| `stream_abnormal` | Whether the image stream is abnormal |
+| `seconds_since_last_image` | Seconds since the last valid image, or `-1` if no image has been received |
+| `window` | Statistics for the latest status interval, approximately one second |
+| `window.frames` | Images received during the latest status interval |
+| `window.bytes` | Image data received during the latest status interval |
+| `window.failures` | Image processing failures during the latest status interval |
+| `total_failures` | Total image processing failures since startup |
+| `stats_window_sec` | Sliding-window duration for FPS and bandwidth statistics |
+| `fps.current` | Average FPS during the latest status interval |
+| `fps.min` / `fps.avg` / `fps.max` | Minimum, average, and maximum callback FPS within the statistics window |
+| `fps.samples` | Number of FPS samples in the statistics window |
+| `bandwidth_mbps.current` | Average bandwidth during the latest status interval, in Mbps |
+| `bandwidth_mbps.min` / `bandwidth_mbps.avg` / `bandwidth_mbps.max` | Minimum, average, and maximum callback bandwidth within the statistics window |
+| `bandwidth_mbps.samples` | Number of bandwidth samples in the statistics window |
+| `capture_dir.path` | Image output directory |
+| `capture_dir.exists` | Whether the output directory exists |
+| `capture_dir.files` | Number of files in the output directory |
+| `capture_dir.bytes` | Output directory size in bytes |
+| `capture_dir.mb` | Output directory size in MB |
+| `capture_dir.max_files` | File retention limit; `0` means unlimited |
+| `capture_dir.max_mb` | Storage limit in MB; `0` means unlimited |
+| `capture_dir.max_bytes` | Byte representation of the `max_mb` limit |
 
+## Output
 
+Successful captures are saved as `.jpg` files. The suffix is omitted when
+`message` is empty:
 
-## 輸出
-
-拍照成功時會輸出 `.jpg` 圖片，`message` 空白時會省略後綴：
-
-```shell
+```text
 /tmp/ros2_cheese/YYYYMMDD-HHMMSS-mmm-<message>.jpg
 ```
 
-Service request 的 `message` 會作為檔名後綴，會自動將不適合檔名的字元轉成 `_`。Service response 的 `message` 會回傳圖片完整路徑。
+The service request's `message` is used as the filename suffix. Characters
+that are unsuitable for filenames are replaced with `_`. The response's
+`message` contains the full path of the saved image.
 
+## Notes
 
+`image_topic` supports these ROS 2 message types:
 
-## Note
-
-`image_topic` 可使用以下 ROS 2 message type：
-
-```shell
+```text
 sensor_msgs/msg/Image
 sensor_msgs/msg/CompressedImage
 ```
 
-`max_files` 與 `max_mb` 設為 `0` 時表示不限制。
+Set `max_files` or `max_mb` to `0` to disable the corresponding limit.
