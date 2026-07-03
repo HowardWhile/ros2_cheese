@@ -43,18 +43,18 @@ You can also provide a string to use as the filename suffix:
 ros2 service call /cheese/string_trigger cheese_interfaces/srv/StringTrigger "{message: test}"
 ```
 
+The default output directory is:
+
+```shell
+/tmp/ros2_cheese
+```
+
 ### Advanced usage
 
 Start the Cheese node with its launch file:
 
 ```shell
 ros2 launch cheese cheese.launch.py
-```
-
-The default output directory is:
-
-```shell
-/tmp/ros2_cheese
 ```
 
 Specify an image topic:
@@ -92,92 +92,13 @@ ros2 launch cheese cheese.launch.py max_files:=1000 max_mb:=1024
 | Service | Type | Description |
 | --- | --- | --- |
 | `/cheese/trigger` | `std_srvs/srv/Trigger` | Captures and saves an image |
-| `/cheese/string_trigger` | `cheese_interfaces/srv/StringTrigger` | Captures an image and uses `message` as the filename suffix |
+| `/cheese/string_trigger` | [`cheese_interfaces/srv/StringTrigger`](cheese_interfaces/srv/StringTrigger.srv) | Captures an image and uses `message` as the filename suffix |
 
 ## Topics
 
 | Topic | Type | Description |
 | --- | --- | --- |
-| `/cheese/status` | `std_msgs/msg/String` | Publishes image stream status once per second |
-
-The `/cheese/status` payload is a JSON string containing the subscription
-state, stream health, frame rate, bandwidth, and output directory statistics.
-
-Example status payload:
-
-```json
-{
-  "image_topic": "/camera/color/image_raw/compressed",
-  "subscribed": true,
-  "subscription_type": "compressed",
-  "stream_ok": true,
-  "stream_abnormal": false,
-  "seconds_since_last_image": 0.012,
-  "window": {
-    "seconds": 1.0,
-    "frames": 20,
-    "bytes": 7123456,
-    "failures": 0
-  },
-  "total_failures": 0,
-  "stats_window_sec": 5.0,
-  "fps": {
-    "current": 20.0,
-    "min": 19.8,
-    "avg": 20.1,
-    "max": 20.4,
-    "samples": 100
-  },
-  "bandwidth_mbps": {
-    "current": 57.0,
-    "min": 55.8,
-    "avg": 56.5,
-    "max": 58.1,
-    "samples": 100
-  },
-  "capture_dir": {
-    "path": "/tmp/ros2_cheese",
-    "exists": true,
-    "files": 12,
-    "bytes": 3456789,
-    "mb": 3.3,
-    "max_files": 1000,
-    "max_mb": 1024,
-    "max_bytes": 1073741824
-  }
-}
-```
-
-### Status fields
-
-| Field | Description |
-| --- | --- |
-| `image_topic` | Configured image topic |
-| `subscribed` | Whether the node has subscribed successfully |
-| `subscription_type` | Subscription type: `raw`, `compressed`, or `unknown` |
-| `stream_ok` | Whether the image stream is healthy |
-| `stream_abnormal` | Whether the image stream is abnormal |
-| `seconds_since_last_image` | Seconds since the last valid image, or `-1` if no image has been received |
-| `window` | Statistics for the latest status interval, approximately one second |
-| `window.frames` | Images received during the latest status interval |
-| `window.bytes` | Image data received during the latest status interval |
-| `window.failures` | Image processing failures during the latest status interval |
-| `total_failures` | Total image processing failures since startup |
-| `stats_window_sec` | Sliding-window duration for FPS and bandwidth statistics |
-| `fps.current` | Average FPS during the latest status interval |
-| `fps.min` / `fps.avg` / `fps.max` | Minimum, average, and maximum callback FPS within the statistics window |
-| `fps.samples` | Number of FPS samples in the statistics window |
-| `bandwidth_mbps.current` | Average bandwidth during the latest status interval, in Mbps |
-| `bandwidth_mbps.min` / `bandwidth_mbps.avg` / `bandwidth_mbps.max` | Minimum, average, and maximum callback bandwidth within the statistics window |
-| `bandwidth_mbps.samples` | Number of bandwidth samples in the statistics window |
-| `capture_dir.path` | Image output directory |
-| `capture_dir.exists` | Whether the output directory exists |
-| `capture_dir.files` | Number of files in the output directory |
-| `capture_dir.bytes` | Output directory size in bytes |
-| `capture_dir.mb` | Output directory size in MB |
-| `capture_dir.max_files` | File retention limit; `0` means unlimited |
-| `capture_dir.max_mb` | Storage limit in MB; `0` means unlimited |
-| `capture_dir.max_bytes` | Byte representation of the `max_mb` limit |
+| [`/cheese/status`](doc/status.md#english) | `std_msgs/msg/String` | Publishes image stream status once per second |
 
 ## Output
 
