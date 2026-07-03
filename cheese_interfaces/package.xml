@@ -4,8 +4,9 @@
   <name>cheese_interfaces</name>
   <version>0.0.1</version>
   <description>Custom service interfaces for the cheese package.</description>
-  <maintainer email="Howard@foxconn.com">Howard</maintainer>
-  <license>GPL-3.0</license>
+  <maintainer email="makubex49@gmail.com">Howard</maintainer>
+  <author email="makubex49@gmail.com">Howard</author>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
