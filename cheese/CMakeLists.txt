@@ -15,10 +15,6 @@ find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
 add_executable(cheese src/cheese_node.cpp)
-target_include_directories(cheese PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
 target_compile_features(cheese PUBLIC cxx_std_17)
 ament_target_dependencies(
   cheese
@@ -35,12 +31,16 @@ install(TARGETS cheese
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY include/
-  DESTINATION include
-)
-
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
+
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  # Preserve the project's existing C++ style instead of enforcing ROS formatting.
+  set(ament_cmake_cpplint_FOUND TRUE)
+  set(ament_cmake_uncrustify_FOUND TRUE)
+  ament_lint_auto_find_test_dependencies()
+endif()
 
 ament_package()
