@@ -1,6 +1,27 @@
+// Copyright 2026 Howard
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cinttypes>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -13,13 +34,7 @@
 #include <string>
 #include <vector>
 
-#if __has_include("cv_bridge/cv_bridge.hpp")
 #include "cv_bridge/cv_bridge.hpp"
-#elif __has_include("cv_bridge/cv_bridge.h")
-#include "cv_bridge/cv_bridge.h"
-#else
-#error "cv_bridge header not found"
-#endif
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/imgproc.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -30,7 +45,7 @@
 #include "std_srvs/srv/trigger.hpp"
 #include "cheese_interfaces/srv/string_trigger.hpp"
 
-#include "cheese/json.hpp"
+#include "nlohmann/json.hpp"
 
 namespace
 {
@@ -95,8 +110,8 @@ public:
         RCLCPP_INFO(get_logger(), "Cheese status topic: ~/status");
         RCLCPP_INFO(get_logger(), "Cheese image topic: %s", sanitize_topic_for_log(image_topic_).c_str());
         RCLCPP_INFO(get_logger(), "Cheese capture dir: %s", capture_dir_.string().c_str());
-        RCLCPP_INFO(get_logger(), "Cheese limits: max_files=%d, max_mb=%ld (%ld bytes)", max_files_,
-                    static_cast<long>(max_mb_), static_cast<long>(max_bytes_));
+        RCLCPP_INFO(get_logger(), "Cheese limits: max_files=%d, max_mb=%" PRId64 " (%" PRId64 " bytes)",
+                    max_files_, max_mb_, max_bytes_);
     }
 
 private:
@@ -389,20 +404,21 @@ private:
                         "\n"
                         "--- [CHEESE STATUS REPORT] ---\n"
                         "Topic: %s | Subscribed: %s | Type: %s\n"
-                        "Stream OK: %s | Abnormal: %s | Last Image: %.3f sec | Failures: %lu\n"
+                        "Stream OK: %s | Abnormal: %s | Last Image: %.3f sec | Failures: %" PRIu64 "\n"
                         "FPS Current/Min/Avg/Max: %.1f / %.1f / %.1f / %.1f\n"
                         "BW Mbps Current/Min/Avg/Max: %.1f / %.1f / %.1f / %.1f\n"
-                        "Capture Dir: %s | Exists: %s | Files: %lu / %d | Size: %.2f MB / %ld MB\n"
+                        "Capture Dir: %s | Exists: %s | Files: %" PRIu64
+                        " / %d | Size: %.2f MB / %" PRId64 " MB\n"
                         "------------------------------",
                         image_topic_.c_str(), subscribed ? "True" : "False", subscribedKindName().c_str(),
                         stream_ok ? "True" : "False", stream_ok ? "False" : "True", seconds_since_last_image,
-                        static_cast<unsigned long>(total_failure_count), fps, fps_stats.min, fps_stats.avg,
+                        total_failure_count, fps, fps_stats.min, fps_stats.avg,
                         fps_stats.max, bandwidth_mbps, bandwidth_stats.min, bandwidth_stats.avg,
                         bandwidth_stats.max, capture_dir_.string().c_str(),
                         capture_dir_stats.exists ? "True" : "False",
-                        static_cast<unsigned long>(capture_dir_stats.file_count), max_files_,
+                        capture_dir_stats.file_count, max_files_,
                         static_cast<double>(capture_dir_stats.total_bytes) / kBytesPerMegabyte,
-                        static_cast<long>(max_mb_));
+                        max_mb_);
         }
     }
 
