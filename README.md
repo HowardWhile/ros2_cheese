@@ -49,6 +49,41 @@ The default output directory is:
 /tmp/ros2_cheese
 ```
 
+## Services
+
+| Service | Type | Description |
+| --- | --- | --- |
+| `/cheese/trigger` | `std_srvs/srv/Trigger` | Captures and saves an image |
+| `/cheese/string_trigger` | [`cheese_interfaces/srv/StringTrigger`](cheese_interfaces/srv/StringTrigger.srv) | Captures an image and uses `message` as the filename suffix |
+
+## Topics
+
+| Topic | Type | Description |
+| --- | --- | --- |
+| [`/cheese/status`](doc/status.md#english) | `std_msgs/msg/String` | Publishes image stream status once per second |
+
+## Parameters
+
+### Node parameters
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `image_topic` | `string` | `/camera/color/image_raw` | Image topic to subscribe to |
+| `capture_dir` | `string` | `/tmp/ros2_cheese` | Directory where captured images are stored |
+| `max_files` | `integer` | `1000` | Maximum number of images to retain; `0` means unlimited |
+| `max_mb` | `integer` | `1024` | Maximum storage size in MB; `0` means unlimited |
+
+### Launch arguments
+
+| Argument | Type | Default | Description |
+| --- | --- | --- | --- |
+| `image_topic` | `string` | `/camera/color/image_raw` | Value passed to the `image_topic` node parameter |
+| `capture_dir` | `string` | `/tmp/ros2_cheese` | Value passed to the `capture_dir` node parameter |
+| `max_files` | `integer` | `1000` | Value passed to the `max_files` node parameter |
+| `max_mb` | `integer` | `1024` | Value passed to the `max_mb` node parameter |
+| `node_name` | `string` | `cheese` | Name assigned to the node |
+| `namespace` | `string` | Empty | Namespace assigned to the node |
+
 ### Advanced usage
 
 Start the Cheese node with its launch file:
@@ -86,19 +121,6 @@ Set file count and storage limits:
 ```shell
 ros2 launch cheese cheese.launch.py max_files:=1000 max_mb:=1024
 ```
-
-## Services
-
-| Service | Type | Description |
-| --- | --- | --- |
-| `/cheese/trigger` | `std_srvs/srv/Trigger` | Captures and saves an image |
-| `/cheese/string_trigger` | [`cheese_interfaces/srv/StringTrigger`](cheese_interfaces/srv/StringTrigger.srv) | Captures an image and uses `message` as the filename suffix |
-
-## Topics
-
-| Topic | Type | Description |
-| --- | --- | --- |
-| [`/cheese/status`](doc/status.md#english) | `std_msgs/msg/String` | Publishes image stream status once per second |
 
 ## Output
 

@@ -49,6 +49,41 @@ ros2 service call /cheese/string_trigger cheese_interfaces/srv/StringTrigger "{m
 /tmp/ros2_cheese
 ```
 
+## Services
+
+| Service 名稱      | 型別                   | 功能說明       |
+| ----------------- | ---------------------- | -------------- |
+| `/cheese/trigger` | `std_srvs/srv/Trigger` | 觸發拍照並存圖 |
+| `/cheese/string_trigger` | [`cheese_interfaces/srv/StringTrigger`](cheese_interfaces/srv/StringTrigger.srv) | 觸發拍照並使用 `message` 作為檔名後綴 |
+
+## Topics
+
+| Topic 名稱       | 型別                  | 功能說明             |
+| ---------------- | --------------------- | -------------------- |
+| [`/cheese/status`](doc/status.md#zh-tw) | `std_msgs/msg/String` | 每秒發布影像串流狀態 |
+
+## Parameters
+
+### Node 參數
+
+| 參數 | 型別 | 預設值 | 功能說明 |
+| --- | --- | --- | --- |
+| `image_topic` | `string` | `/camera/color/image_raw` | 要訂閱的影像 topic |
+| `capture_dir` | `string` | `/tmp/ros2_cheese` | 儲存拍攝影像的資料夾 |
+| `max_files` | `integer` | `1000` | 最多保留的影像數量；`0` 表示不限制 |
+| `max_mb` | `integer` | `1024` | 儲存容量上限，單位 MB；`0` 表示不限制 |
+
+### Launch 參數
+
+| 參數 | 型別 | 預設值 | 功能說明 |
+| --- | --- | --- | --- |
+| `image_topic` | `string` | `/camera/color/image_raw` | 傳遞給 node 的 `image_topic` 參數 |
+| `capture_dir` | `string` | `/tmp/ros2_cheese` | 傳遞給 node 的 `capture_dir` 參數 |
+| `max_files` | `integer` | `1000` | 傳遞給 node 的 `max_files` 參數 |
+| `max_mb` | `integer` | `1024` | 傳遞給 node 的 `max_mb` 參數 |
+| `node_name` | `string` | `cheese` | 指定 node 名稱 |
+| `namespace` | `string` | 空字串 | 指定 node namespace |
+
 ### 進階使用方式
 
 透過 launch file 啟動 Cheese 節點：
@@ -86,19 +121,6 @@ ros2 launch cheese cheese.launch.py namespace:=camera node_name:=cheese
 ```shell
 ros2 launch cheese cheese.launch.py max_files:=1000 max_mb:=1024
 ```
-
-## Services
-
-| Service 名稱      | 型別                   | 功能說明       |
-| ----------------- | ---------------------- | -------------- |
-| `/cheese/trigger` | `std_srvs/srv/Trigger` | 觸發拍照並存圖 |
-| `/cheese/string_trigger` | [`cheese_interfaces/srv/StringTrigger`](cheese_interfaces/srv/StringTrigger.srv) | 觸發拍照並使用 `message` 作為檔名後綴 |
-
-## Topics
-
-| Topic 名稱       | 型別                  | 功能說明             |
-| ---------------- | --------------------- | -------------------- |
-| [`/cheese/status`](doc/status.md#zh-tw) | `std_msgs/msg/String` | 每秒發布影像串流狀態 |
 
 ## 輸出
 
