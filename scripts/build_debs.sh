@@ -2,7 +2,7 @@
 # Build ROS 2 binary Debian packages in an architecture-matched ROS container.
 #
 # Examples:
-#   ./scripts/build_debs.sh --arch amd64
+#   ./scripts/build_debs.sh --arch x86_64
 #   ./scripts/build_debs.sh --arch arm64 --ros-distro jazzy
 set -euo pipefail
 
@@ -15,12 +15,12 @@ OS_VERSION="${OS_VERSION:-noble}"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/build_debs.sh --arch {amd64|arm64} [options]
+Usage: scripts/build_debs.sh --arch {x86_64|arm64} [options]
 
 Builds ros-<distro>-cheese-interfaces and ros-<distro>-cheese Debian packages.
 
 Options:
-  --arch ARCH          Target Debian architecture: amd64 or arm64 (required)
+  --arch ARCH          Target CPU architecture: x86_64 or arm64 (required)
   --ros-distro DISTRO  ROS 2 distribution (default: jazzy, or $ROS_DISTRO)
   --os-version CODE    Ubuntu codename used by bloom (default: noble, or $OS_VERSION)
   -h, --help           Show this help
@@ -29,7 +29,7 @@ Output: dist/deb/<ros-distro>/<arch>/
 
 The script first builds (or reuses) a Docker builder image. After a successful
 package build it asks whether to remove that image; the default is to keep it.
-Building arm64 on an amd64 host requires Docker with ARM emulation configured.
+Building arm64 on an x86_64 host requires Docker with ARM emulation configured.
 EOF
 }
 
@@ -60,9 +60,14 @@ while (($#)); do
 done
 
 case "$ARCH" in
-  amd64|arm64) ;;
+  x86_64)
+    DOCKER_ARCH="amd64"
+    ;;
+  arm64)
+    DOCKER_ARCH="arm64"
+    ;;
   *)
-    echo "--arch must be either amd64 or arm64." >&2
+    echo "--arch must be either x86_64 or arm64." >&2
     usage >&2
     exit 2
     ;;
@@ -73,7 +78,7 @@ command -v docker >/dev/null || {
   exit 1
 }
 
-readonly PLATFORM="linux/$ARCH"
+readonly PLATFORM="linux/$DOCKER_ARCH"
 readonly BUILDER_IMAGE="ros2-cheese-deb-builder:${ROS_DISTRO}-${ARCH}"
 readonly OUTPUT_DIR="$REPOSITORY_DIR/dist/deb/$ROS_DISTRO/$ARCH"
 
@@ -111,6 +116,7 @@ docker run --rm \
   --platform "$PLATFORM" \
   --volume "$REPOSITORY_DIR:/workspace:ro" \
   --volume "$OUTPUT_DIR:/output" \
+  --env "ARCH=$ARCH" \
   --env "ROS_DISTRO=$ROS_DISTRO" \
   --env "OS_VERSION=$OS_VERSION" \
   "$BUILDER_IMAGE" \
@@ -129,7 +135,17 @@ docker run --rm \
     apt-get install -y "/tmp/ros-${ROS_DISTRO}-cheese-interfaces_"*.deb
     build_package cheese
 
-    cp /tmp/ros-"$ROS_DISTRO"-cheese*.deb /output/
+    interface_debs=(/tmp/ros-"$ROS_DISTRO"-cheese-interfaces_*.deb)
+    cheese_debs=(/tmp/ros-"$ROS_DISTRO"-cheese_*.deb)
+    if [[ ${#interface_debs[@]} -ne 1 || ${#cheese_debs[@]} -ne 1 ]]; then
+      echo "Expected exactly one primary deb for each ROS package." >&2
+      exit 1
+    fi
+
+    cp "${interface_debs[0]}" "${cheese_debs[0]}" /output/
+    archive="/output/ros-${ROS_DISTRO}-cheese-${ARCH}.zip"
+    rm -f "$archive"
+    zip -j "$archive" "${interface_debs[0]}" "${cheese_debs[0]}"
   '
 
 echo "Packages written to: $OUTPUT_DIR"

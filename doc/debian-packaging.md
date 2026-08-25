@@ -33,8 +33,8 @@ docker run --rm --platform linux/arm64 alpine uname -m
 3. 建立 `cheese` 的 deb。
 
 ```shell
-# x86_64（Debian 套件架構名稱為 amd64）
-./scripts/build_debs.sh --arch amd64
+# x86_64（產出的 Debian 套件架構名稱為 amd64）
+./scripts/build_debs.sh --arch x86_64
 
 # 在 x86_64 主機建立 ARM64 套件前，先啟用 Docker 的 arm64 模擬
 docker run --privileged --rm tonistiigi/binfmt --install arm64
@@ -46,9 +46,20 @@ docker run --privileged --rm tonistiigi/binfmt --install arm64
 預設目標為 ROS 2 Jazzy 與 Ubuntu Noble。輸出會寫入：
 
 ```text
-dist/deb/jazzy/amd64/
+dist/deb/jazzy/x86_64/
 dist/deb/jazzy/arm64/
 ```
+
+每個目錄包含兩個獨立的 deb，以及方便傳遞的 zip：
+
+```text
+ros-jazzy-cheese_<version>_<debian-arch>.deb
+ros-jazzy-cheese-interfaces_<version>_<debian-arch>.deb
+ros-jazzy-cheese-<arch>.zip
+```
+
+zip 僅包含上述兩個主要 deb；`<arch>` 是腳本參數（`x86_64` 或 `arm64`），而
+`<debian-arch>` 是 Debian 架構名稱（`amd64` 或 `arm64`）。
 
 可透過環境變數或選項調整 ROS 發行版與 Ubuntu 代號：
 
@@ -64,7 +75,7 @@ ROS_DISTRO=jazzy OS_VERSION=noble ./scripts/build_debs.sh --arch arm64
 成功後，腳本會詢問是否移除 builder image：
 
 ```text
-Remove builder image ros2-cheese-deb-builder:jazzy-amd64? [y/N]
+Remove builder image ros2-cheese-deb-builder:jazzy-x86_64? [y/N]
 ```
 
 直接按 Enter 或輸入其他值會保留 image，以加速下次建置；輸入 `y` 或 `yes` 才會

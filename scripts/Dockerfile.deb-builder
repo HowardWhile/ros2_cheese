@@ -11,6 +11,7 @@ RUN apt-get update \
       dpkg-dev \
       debhelper \
       python3-rosdep \
+      zip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only manifests so source-code changes reuse this layer.  rosdep installs
