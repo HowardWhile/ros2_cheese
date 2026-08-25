@@ -145,3 +145,7 @@ sensor_msgs/msg/CompressedImage
 ```
 
 Set `max_files` or `max_mb` to `0` to disable the corresponding limit.
+
+## Developer documentation
+
+- [Building Debian packages](doc/debian-packaging.md)

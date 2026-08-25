@@ -142,3 +142,7 @@ sensor_msgs/msg/CompressedImage
 ```
 
 將 `max_files` 或 `max_mb` 設為 `0`，即可停用對應的保留上限。
+
+## 開發者文件
+
+- [建立 Debian 安裝包](doc/debian-packaging.md)
