@@ -1,0 +1,25 @@
+ARG ROS_DISTRO=jazzy
+FROM ros:${ROS_DISTRO}-ros-base
+
+ARG ROS_DISTRO
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      python3-bloom \
+      fakeroot \
+      dpkg-dev \
+      debhelper \
+      python3-rosdep \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only manifests so source-code changes reuse this layer.  rosdep installs
+# all released ROS and system dependencies; cheese_interfaces is local source.
+COPY cheese/package.xml /tmp/src/cheese/package.xml
+COPY cheese_interfaces/package.xml /tmp/src/cheese_interfaces/package.xml
+
+RUN apt-get update \
+    && rosdep update \
+    && rosdep install --from-paths /tmp/src --ignore-src -r -y \
+      --rosdistro "${ROS_DISTRO}" \
+    && rm -rf /var/lib/apt/lists/* /tmp/src

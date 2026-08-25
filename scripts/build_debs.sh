@@ -27,8 +27,9 @@ Options:
 
 Output: dist/deb/<ros-distro>/<arch>/
 
-The script uses Docker's --platform support.  Building arm64 on an amd64 host
-requires Docker with ARM emulation configured (Docker Desktop normally provides it).
+The script first builds (or reuses) a Docker builder image. After a successful
+package build it asks whether to remove that image; the default is to keep it.
+Building arm64 on an amd64 host requires Docker with ARM emulation configured.
 EOF
 }
 
@@ -73,9 +74,37 @@ command -v docker >/dev/null || {
 }
 
 readonly PLATFORM="linux/$ARCH"
-readonly IMAGE="ros:${ROS_DISTRO}-ros-base"
+readonly BUILDER_IMAGE="ros2-cheese-deb-builder:${ROS_DISTRO}-${ARCH}"
 readonly OUTPUT_DIR="$REPOSITORY_DIR/dist/deb/$ROS_DISTRO/$ARCH"
+
+if [[ "$ARCH" == "arm64" ]] && ! docker run --rm \
+  --platform "$PLATFORM" \
+  --entrypoint /bin/sh \
+  "ros:${ROS_DISTRO}-ros-base" \
+  -c true >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+Docker cannot execute arm64 containers on this host.
+
+Enable the arm64 QEMU/binfmt emulator once, then rerun this script:
+  docker run --privileged --rm tonistiigi/binfmt --install arm64
+
+Verify the setup with:
+  docker run --rm --platform linux/arm64 alpine uname -m
+
+Expected output: aarch64
+EOF
+  exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
+
+echo "Building or reusing builder image: $BUILDER_IMAGE"
+docker build \
+  --platform "$PLATFORM" \
+  --build-arg "ROS_DISTRO=$ROS_DISTRO" \
+  --tag "$BUILDER_IMAGE" \
+  --file "$SCRIPT_DIR/Dockerfile.deb-builder" \
+  "$REPOSITORY_DIR"
 
 echo "Building $ROS_DISTRO Debian packages for $ARCH..."
 docker run --rm \
@@ -84,20 +113,8 @@ docker run --rm \
   --volume "$OUTPUT_DIR:/output" \
   --env "ROS_DISTRO=$ROS_DISTRO" \
   --env "OS_VERSION=$OS_VERSION" \
-  "$IMAGE" \
+  "$BUILDER_IMAGE" \
   bash -ceu '
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y --no-install-recommends python3-bloom fakeroot dpkg-dev python3-rosdep
-
-    # Resolve released ROS and system dependencies. cheese_interfaces is built
-    # locally below, so it must not be resolved from an external ROS repository.
-    rosdep update
-    rosdep install --from-paths /workspace/cheese_interfaces --ignore-src -r -y \
-      --rosdistro "$ROS_DISTRO"
-    rosdep install --from-paths /workspace/cheese --ignore-src -r -y \
-      --rosdistro "$ROS_DISTRO" --skip-keys cheese_interfaces
-
     build_package() {
       package_name="$1"
       rm -rf "/tmp/$package_name"
@@ -116,3 +133,18 @@ docker run --rm \
   '
 
 echo "Packages written to: $OUTPUT_DIR"
+
+if [[ -t 0 ]]; then
+  if read -r -p "Remove builder image $BUILDER_IMAGE? [y/N] " response; then
+    case "$response" in
+      [Yy]|[Yy][Ee][Ss])
+        docker image rm "$BUILDER_IMAGE"
+        ;;
+      *)
+        echo "Keeping builder image: $BUILDER_IMAGE"
+        ;;
+    esac
+  fi
+else
+  echo "Non-interactive shell: keeping builder image: $BUILDER_IMAGE"
+fi
