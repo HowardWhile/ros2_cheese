@@ -4,3 +4,7 @@ install
 build
 *.deb
 *.zip
+
+AGENTS.md
+docs/*
+.scratch/*

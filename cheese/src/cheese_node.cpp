@@ -32,6 +32,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "cv_bridge/cv_bridge.hpp"
@@ -54,6 +55,8 @@ constexpr auto kStatusPublishPeriod = std::chrono::milliseconds(1000);
 constexpr auto kStatusLogPeriod = std::chrono::seconds(10);
 constexpr auto kStatsWindowPeriod = std::chrono::seconds(5);
 constexpr auto kStreamTimeout = std::chrono::milliseconds(2000);
+constexpr int kCaptureVerificationAttempts = 5;
+constexpr auto kCaptureVerificationRetryDelay = std::chrono::milliseconds(100);
 constexpr int64_t kBytesPerMegabyte = 1024LL * 1024LL;
 constexpr char kRawImageType[] = "sensor_msgs/msg/Image";
 constexpr char kCompressedImageType[] = "sensor_msgs/msg/CompressedImage";
@@ -547,6 +550,66 @@ private:
             {
                 response->success = false;
                 response->message = "Failed to write image: " + path.string();
+                return;
+            }
+
+            bool verified = false;
+            std::string verification_error;
+            for (int attempt = 0; attempt < kCaptureVerificationAttempts; ++attempt)
+            {
+                std::error_code ec;
+                if (!std::filesystem::exists(path, ec) || ec)
+                {
+                    verification_error = "file does not exist";
+                }
+                else if (!std::filesystem::is_regular_file(path, ec) || ec)
+                {
+                    verification_error = "path is not a regular file";
+                }
+                else if (std::filesystem::file_size(path, ec) == 0 || ec)
+                {
+                    verification_error = "file is empty or cannot be inspected";
+                }
+                else
+                {
+                    try
+                    {
+                        const auto saved_image = cv::imread(path.string(), cv::IMREAD_UNCHANGED);
+                        if (saved_image.empty())
+                        {
+                            verification_error = "file cannot be decoded as an image";
+                        }
+                        else if (saved_image.size() != image.size())
+                        {
+                            verification_error = "decoded image dimensions do not match the captured image";
+                        }
+                        else
+                        {
+                            verified = true;
+                        }
+                    }
+                    catch (const cv::Exception &exc)
+                    {
+                        verification_error = std::string("image decode raised an exception: ") + exc.what();
+                    }
+                }
+
+                if (verified)
+                {
+                    break;
+                }
+
+                if (attempt + 1 < kCaptureVerificationAttempts)
+                {
+                    std::this_thread::sleep_for(kCaptureVerificationRetryDelay);
+                }
+            }
+
+            if (!verified)
+            {
+                response->success = false;
+                response->message = "Failed to verify saved image: " + path.string() + " (" + verification_error + ")";
+                RCLCPP_ERROR(get_logger(), "%s", response->message.c_str());
                 return;
             }
 
