@@ -23,6 +23,21 @@
 | ------------------ | ------------------------ |
 | `cheese.launch.py` | 啟動 Cheese 拍照服務     |
 
+## 安裝
+
+在已安裝 ROS 2 Jazzy 的 Ubuntu/Debian 系統上，執行以下指令即可下載最新 release、
+解壓縮並安裝符合目前 CPU 架構的 Debian 套件：
+
+```shell
+wget -qO- https://raw.githubusercontent.com/HowardWhile/ros2_cheese/develop/scripts/download_release.sh | bash
+```
+
+安裝後啟動節點：
+
+```shell
+ros2 run cheese cheese
+```
+
 ## 使用方法
 
 啟動 Cheese 節點：
