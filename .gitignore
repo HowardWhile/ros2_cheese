@@ -4,6 +4,7 @@ install
 build
 *.deb
 *.zip
+*.pyc
 
 AGENTS.md
 docs/*

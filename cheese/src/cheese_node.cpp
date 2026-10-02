@@ -31,6 +31,7 @@
 #include <mutex>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -54,7 +55,7 @@ constexpr auto kTopicProbePeriod = std::chrono::milliseconds(1000);
 constexpr auto kStatusPublishPeriod = std::chrono::milliseconds(1000);
 constexpr auto kStatusLogPeriod = std::chrono::seconds(10);
 constexpr auto kStatsWindowPeriod = std::chrono::seconds(5);
-constexpr auto kStreamTimeout = std::chrono::milliseconds(2000);
+constexpr auto kStreamTimeout = std::chrono::seconds(3);
 constexpr int kCaptureVerificationAttempts = 5;
 constexpr auto kCaptureVerificationRetryDelay = std::chrono::milliseconds(100);
 constexpr int64_t kBytesPerMegabyte = 1024LL * 1024LL;
@@ -63,6 +64,7 @@ constexpr char kCompressedImageType[] = "sensor_msgs/msg/CompressedImage";
 const std::filesystem::path kDefaultCaptureDir{"/tmp/ros2_cheese"};
 
 using Json = nlohmann::json;
+using SteadyClock = std::chrono::steady_clock;
 
 std::string sanitize_topic_for_log(const std::string &topic)
 {
@@ -103,7 +105,7 @@ public:
 
         topic_probe_timer_ = create_wall_timer(kTopicProbePeriod, std::bind(&CheeseNode::probeImageTopic, this));
         status_timer_ = create_wall_timer(kStatusPublishPeriod, std::bind(&CheeseNode::publishStatus, this));
-        last_status_time_ = now();
+        last_status_time_ = SteadyClock::now();
         last_status_log_time_ = last_status_time_;
         probeImageTopic();
         pruneCaptures();
@@ -134,7 +136,7 @@ private:
 
     struct StreamSample
     {
-        rclcpp::Time time;
+        SteadyClock::time_point time;
         double fps = 0.0;
         double bandwidth_mbps = 0.0;
     };
@@ -154,56 +156,114 @@ private:
         uintmax_t total_bytes = 0;
     };
 
-    void probeImageTopic()
+    void clearSubscription()
     {
-        const auto detected_kind = detectImageTopicKind();
-        if (!detected_kind.has_value())
-        {
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "Waiting for image topic '%s' with type %s or %s",
-                                 image_topic_.c_str(), kRawImageType, kCompressedImageType);
-            return;
-        }
-
-        if (detected_kind.value() == subscribed_kind_)
-        {
-            return;
-        }
-
+        // All callbacks use the default mutually exclusive callback group.
+        // Generation checks also reject messages queued by a retired subscription.
+        const bool was_subscribed = isSubscribed();
+        ++subscription_generation_;
         raw_sub_.reset();
         compressed_sub_.reset();
-        subscribed_kind_ = detected_kind.value();
+        subscribed_kind_ = ImageTopicKind::kUnknown;
+        std::lock_guard<std::mutex> lock(stream_mutex_);
+        latest_image_.release();
+        awaiting_switched_image_ |= was_subscribed;
+        has_received_image_ = false;
+        stream_samples_.clear();
+        window_frame_count_ = 0;
+        window_byte_count_ = 0;
+        window_failure_count_ = 0;
+    }
 
-        if (subscribed_kind_ == ImageTopicKind::kRaw)
+    void probeImageTopic()
+    {
+        try
         {
-            raw_sub_ = create_subscription<sensor_msgs::msg::Image>(
-                image_topic_, rclcpp::SensorDataQoS(),
-                std::bind(&CheeseNode::rawImageCallback, this, std::placeholders::_1));
-            RCLCPP_INFO(get_logger(), "Subscribed to raw image topic: %s", image_topic_.c_str());
+            const auto detected_kind = detectImageTopicKind();
+            if (!detected_kind.has_value())
+            {
+                if (isSubscribed())
+                {
+                    clearSubscription();
+                }
+                RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+                                     "Waiting for image publishers on '%s'", image_topic_.c_str());
+                return;
+            }
+            if (detected_kind.value() == subscribed_kind_)
+            {
+                return;
+            }
+
+            clearSubscription();
+            const auto generation = subscription_generation_;
+            if (detected_kind.value() == ImageTopicKind::kRaw)
+            {
+                raw_sub_ = create_subscription<sensor_msgs::msg::Image>(
+                    image_topic_, rclcpp::SensorDataQoS(),
+                    [this, generation](sensor_msgs::msg::Image::SharedPtr msg)
+                    {
+                        if (generation == subscription_generation_)
+                        {
+                            rawImageCallback(msg);
+                        }
+                    });
+            }
+            else
+            {
+                compressed_sub_ = create_subscription<sensor_msgs::msg::CompressedImage>(
+                    image_topic_, rclcpp::SensorDataQoS(),
+                    [this, generation](sensor_msgs::msg::CompressedImage::SharedPtr msg)
+                    {
+                        if (generation == subscription_generation_)
+                        {
+                            compressedImageCallback(msg);
+                        }
+                    });
+            }
+            subscribed_kind_ = detected_kind.value();
+            subscription_started_ = SteadyClock::now();
+            RCLCPP_INFO(get_logger(), "Subscribed to %s image topic: %s",
+                        subscribedKindName().c_str(), image_topic_.c_str());
         }
-        else if (subscribed_kind_ == ImageTopicKind::kCompressed)
+        catch (const std::exception &exc)
         {
-            compressed_sub_ = create_subscription<sensor_msgs::msg::CompressedImage>(
-                image_topic_, rclcpp::SensorDataQoS(),
-                std::bind(&CheeseNode::compressedImageCallback, this, std::placeholders::_1));
-            RCLCPP_INFO(get_logger(), "Subscribed to compressed image topic: %s", image_topic_.c_str());
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                 "Image subscription probe failed; retrying every second: %s", exc.what());
         }
     }
 
-    std::optional<ImageTopicKind> detectImageTopicKind() const
+    std::optional<ImageTopicKind> detectImageTopicKind()
     {
-        const auto topics = get_topic_names_and_types();
-        const auto topic_it = topics.find(image_topic_);
-        if (topic_it == topics.end())
+        // Publisher endpoints exclude this node's own subscriptions.
+        // https://github.com/ros2/rclcpp/blob/jazzy/rclcpp/include/rclcpp/node.hpp
+        const auto publishers = get_publishers_info_by_topic(image_topic_);
+        bool raw_available = false;
+        bool compressed_available = false;
+        for (const auto &publisher : publishers)
         {
-            return std::nullopt;
+            raw_available |= publisher.topic_type() == kRawImageType;
+            compressed_available |= publisher.topic_type() == kCompressedImageType;
         }
-
-        const auto &types = topic_it->second;
-        if (std::find(types.begin(), types.end(), kRawImageType) != types.end())
+        if ((subscribed_kind_ == ImageTopicKind::kRaw && raw_available) ||
+            (subscribed_kind_ == ImageTopicKind::kCompressed && compressed_available))
+        {
+            std::lock_guard<std::mutex> lock(stream_mutex_);
+            const auto current_time = SteadyClock::now();
+            const auto last_valid_time = has_received_image_ ? last_image_time_ : subscription_started_;
+            const bool timed_out = current_time - last_valid_time >= kStreamTimeout;
+            const bool observed = current_time - subscription_started_ >= kStreamTimeout;
+            if (timed_out && observed && raw_available && compressed_available)
+            {
+                return subscribed_kind_ == ImageTopicKind::kRaw ? ImageTopicKind::kCompressed : ImageTopicKind::kRaw;
+            }
+            return subscribed_kind_;
+        }
+        if (raw_available)
         {
             return ImageTopicKind::kRaw;
         }
-        if (std::find(types.begin(), types.end(), kCompressedImageType) != types.end())
+        if (compressed_available)
         {
             return ImageTopicKind::kCompressed;
         }
@@ -247,24 +307,39 @@ private:
 
     void compressedImageCallback(const sensor_msgs::msg::CompressedImage::SharedPtr msg)
     {
-        const cv::Mat encoded_image(1, static_cast<int>(msg->data.size()), CV_8UC1,
-                                    const_cast<uint8_t *>(msg->data.data()));
-        const cv::Mat decoded_image = cv::imdecode(encoded_image, cv::IMREAD_COLOR);
-        if (decoded_image.empty())
+        try
+        {
+            if (msg->data.empty() || msg->data.size() > static_cast<size_t>(std::numeric_limits<int>::max()))
+            {
+                throw std::runtime_error("compressed image data is empty or too large");
+            }
+            const cv::Mat encoded_image(1, static_cast<int>(msg->data.size()), CV_8UC1,
+                                        const_cast<uint8_t *>(msg->data.data()));
+            const cv::Mat decoded_image = cv::imdecode(encoded_image, cv::IMREAD_COLOR);
+            if (decoded_image.empty())
+            {
+                throw std::runtime_error("compressed image cannot be decoded");
+            }
+            updateLatestImage(decoded_image);
+            recordImageSample(msg->data.size());
+        }
+        catch (const std::exception &exc)
         {
             recordImageFailure();
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Failed to decode compressed image");
-            return;
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                 "Failed to decode compressed image: %s", exc.what());
         }
-
-        updateLatestImage(decoded_image);
-        recordImageSample(msg->data.size());
     }
 
     void updateLatestImage(const cv::Mat &image)
     {
-        std::lock_guard<std::mutex> lock(image_mutex_);
+        if (image.empty())
+        {
+            throw std::runtime_error("decoded image is empty");
+        }
+        std::lock_guard<std::mutex> lock(stream_mutex_);
         latest_image_ = image.clone();
+        awaiting_switched_image_ = false;
     }
 
 
@@ -280,14 +355,14 @@ private:
 
     void recordImageSample(const size_t byte_count)
     {
-        const auto sample_time = now();
+        const auto sample_time = SteadyClock::now();
         std::lock_guard<std::mutex> lock(stream_mutex_);
         ++window_frame_count_;
         window_byte_count_ += byte_count;
 
         if (has_received_image_)
         {
-            const auto elapsed = (sample_time - last_image_time_).seconds();
+            const auto elapsed = std::chrono::duration<double>(sample_time - last_image_time_).count();
             if (elapsed > 1e-9)
             {
                 stream_samples_.push_back(StreamSample{sample_time,
@@ -330,8 +405,8 @@ private:
 
     void publishStatus()
     {
-        const auto current_time = now();
-        const auto elapsed = std::max(1e-9, (current_time - last_status_time_).seconds());
+        const auto current_time = SteadyClock::now();
+        const auto elapsed = std::max(1e-9, std::chrono::duration<double>(current_time - last_status_time_).count());
         last_status_time_ = current_time;
 
         uint64_t frame_count = 0;
@@ -339,7 +414,7 @@ private:
         uint64_t failure_count = 0;
         uint64_t total_failure_count = 0;
         bool has_received_image = false;
-        rclcpp::Time last_image_time;
+        SteadyClock::time_point last_image_time;
         MetricStats fps_stats;
         MetricStats bandwidth_stats;
 
@@ -363,7 +438,7 @@ private:
         const double bandwidth_mbps = (static_cast<double>(byte_count) * 8.0) / elapsed / 1000000.0;
 
         const bool subscribed = isSubscribed();
-        const double seconds_since_last_image = has_received_image ? (current_time - last_image_time).seconds() : -1.0;
+        const double seconds_since_last_image = has_received_image ? std::chrono::duration<double>(current_time - last_image_time).count() : -1.0;
         const bool stream_timeout =
             !has_received_image || seconds_since_last_image > std::chrono::duration<double>(kStreamTimeout).count();
         const bool stream_ok = subscribed && !stream_timeout && failure_count == 0;
@@ -399,7 +474,7 @@ private:
         msg.data = status_text;
         status_pub_->publish(msg);
 
-        if ((current_time - last_status_log_time_).seconds() >=
+        if (std::chrono::duration<double>(current_time - last_status_log_time_).count() >=
             std::chrono::duration<double>(kStatusLogPeriod).count())
         {
             last_status_log_time_ = current_time;
@@ -426,10 +501,10 @@ private:
         }
     }
 
-    void pruneStreamSamples(const rclcpp::Time &current_time)
+    void pruneStreamSamples(const SteadyClock::time_point &current_time)
     {
         const auto window_seconds = std::chrono::duration<double>(kStatsWindowPeriod).count();
-        while (!stream_samples_.empty() && (current_time - stream_samples_.front().time).seconds() > window_seconds)
+        while (!stream_samples_.empty() && std::chrono::duration<double>(current_time - stream_samples_.front().time).count() > window_seconds)
         {
             stream_samples_.pop_front();
         }
@@ -529,18 +604,21 @@ private:
     {
         cv::Mat image;
         {
-            std::lock_guard<std::mutex> lock(image_mutex_);
-            if (!latest_image_.empty())
+            std::lock_guard<std::mutex> lock(stream_mutex_);
+            if (has_received_image_ && SteadyClock::now() - last_image_time_ > kStreamTimeout)
             {
-                image = latest_image_.clone();
+                response->success = false;
+                response->message = "Image stream timeout: no valid image in the last 3 seconds";
+                return;
             }
-        }
-
-        if (image.empty())
-        {
-            response->success = false;
-            response->message = "No image has been received yet";
-            return;
+            if (!has_received_image_ || latest_image_.empty())
+            {
+                response->success = false;
+                response->message = awaiting_switched_image_ ? "Waiting for a valid image after source switch"
+                                                            : "No image has been received yet";
+                return;
+            }
+            image = latest_image_.clone();
         }
 
         try
@@ -748,8 +826,9 @@ private:
     int64_t max_mb_ = 1024;
     int64_t max_bytes_ = 1024LL * kBytesPerMegabyte;
     ImageTopicKind subscribed_kind_ = ImageTopicKind::kUnknown;
+    uint64_t subscription_generation_ = 0;
+    SteadyClock::time_point subscription_started_;
     cv::Mat latest_image_;
-    std::mutex image_mutex_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr raw_sub_;
     rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr compressed_sub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
@@ -757,15 +836,16 @@ private:
     rclcpp::Service<cheese_interfaces::srv::StringTrigger>::SharedPtr string_trigger_srv_;
     rclcpp::TimerBase::SharedPtr topic_probe_timer_;
     rclcpp::TimerBase::SharedPtr status_timer_;
-    rclcpp::Time last_status_time_;
-    rclcpp::Time last_status_log_time_;
-    rclcpp::Time last_image_time_;
+    SteadyClock::time_point last_status_time_;
+    SteadyClock::time_point last_status_log_time_;
+    SteadyClock::time_point last_image_time_;
     std::mutex stream_mutex_;
     uint64_t window_frame_count_ = 0;
     uint64_t window_byte_count_ = 0;
     uint64_t window_failure_count_ = 0;
     uint64_t total_failure_count_ = 0;
     bool has_received_image_ = false;
+    bool awaiting_switched_image_ = false;
     std::deque<StreamSample> stream_samples_;
 };
 

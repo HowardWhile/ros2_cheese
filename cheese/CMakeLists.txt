@@ -36,6 +36,16 @@ install(DIRECTORY launch
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  find_package(rmw REQUIRED)
+  add_library(fail_subscription SHARED test/fail_subscription.cpp)
+  ament_target_dependencies(fail_subscription rmw)
+  target_link_libraries(fail_subscription ${CMAKE_DL_LIBS})
+  ament_add_pytest_test(stream_recovery test/test_stream_recovery.py
+    TIMEOUT 240
+    APPEND_ENV "CHEESE_TEST_FAILURE_LIBRARY=$<TARGET_FILE:fail_subscription>"
+  )
+  set_tests_properties(stream_recovery PROPERTIES RUN_SERIAL TRUE)
   find_package(ament_lint_auto REQUIRED)
   # Preserve the project's existing C++ style instead of enforcing ROS formatting.
   set(ament_cmake_cpplint_FOUND TRUE)
