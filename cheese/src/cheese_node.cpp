@@ -414,7 +414,8 @@ private:
                         " / %d | Size: %.2f MB / %" PRId64 " MB\n"
                         "------------------------------",
                         image_topic_.c_str(), subscribed ? "True" : "False", subscribedKindName().c_str(),
-                        stream_ok ? "True" : "False", stream_ok ? "False" : "True", seconds_since_last_image,
+                        stream_ok ? "\033[1;92mTrue\033[0m" : "\033[1;91mFalse\033[0m",
+                        stream_ok ? "False" : "True", seconds_since_last_image,
                         total_failure_count, fps, fps_stats.min, fps_stats.avg,
                         fps_stats.max, bandwidth_mbps, bandwidth_stats.min, bandwidth_stats.avg,
                         bandwidth_stats.max, capture_dir_.string().c_str(),
