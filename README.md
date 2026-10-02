@@ -144,6 +144,18 @@ sensor_msgs/msg/Image
 sensor_msgs/msg/CompressedImage
 ```
 
+Cheese detects image types from publishers and keeps the currently selected
+source while it supplies valid images. If both types are available initially,
+Image takes priority. If the selected type loses all publishers or supplies no
+valid image for 3 seconds, Cheese switches to the other available type. A new
+subscription is observed for at least 3 seconds before another timeout switch.
+Subscription creation failures are retried every second; invalid images are
+logged and discarded.
+
+Both capture services return `success: false` before the first valid image,
+while waiting for an image after a source switch, or when the last valid image
+is more than 3 seconds old. Valid incoming images automatically restore capture.
+
 Set `max_files` or `max_mb` to `0` to disable the corresponding limit.
 
 ## Developer documentation
